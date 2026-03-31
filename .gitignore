@@ -1,0 +1,6 @@
+/data/
+/.venv/
+/.idea/
+/aws_*/
+/documentations/
+/.env
