@@ -1,20 +1,20 @@
 """
-ct_us_fetch.py — ClinicalTrials.gov (v2) Health Trials Fetcher
-==============================================================
-Base URL : https://clinicaltrials.gov/api/v2/studies
-Auth     : None — fully public API
-
-Fetches health / disability / DALY-related clinical trials across
-five condition query groups and deduplicates on NCT ID.
-
-Returns fetch_health_trials() → dict with:
-  trials               list[dict]
-  total_fetched        int
-  by_group             dict[str, int]
-  duplicates_removed   int
-  status_filter        list[str]
-  phase_filter         list[str] | None
-  updated_since        str | None
+ct_us_function.py
+Fetches clinical trial data from ClinicalTrials.gov (clinicaltrials.gov/api/v2/studies).
+No API key required.
+Saves results to S3 and returns a summary.
+Event params (all optional):
+    Param           Type        Default
+    status          list[str]   RECRUITING, NOT_YET_RECRUITING, ACTIVE_NOT_RECRUITING
+    phase           list[str]   all phases
+    page_size       int         200 (max 1000)
+    max_records     int         500
+    mode            str         "all" — or single group label
+    updated_since   str         none — ISO date filter
+Group labels:
+    mental_health, disability, cancer,
+    chronic_disease, rare_neurological
+Env vars (required): AWS_REGION_NAME, S3_BUCKET, S3_FETCH_FOLDER
 """
 
 from __future__ import annotations

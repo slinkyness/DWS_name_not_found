@@ -1,39 +1,17 @@
 """
-gho_function.py — AWS Lambda: WHO Global Health Observatory (GHO) fetcher
-=========================================================================
-No API key required (fully public OData API).
-Calls gho_fetch.fetch_gho() for the heavy logic.
-Stores results in S3 and returns a summary.
-
-Payload structure stored in S3:
-  fetched_at   str          ISO-8601 UTC timestamp
-  source_api   str          API base URL
-  fetch_params dict         Echo of all resolved input parameters
-  data         dict         Fetch results:
-    indicator_catalogue  list[dict]   Full GHO indicator list
-    geo_catalogue        dict         All countries + regions
-    indicators           dict         {code: fetch_indicator() result, ...}
-    total_fetched        int          Total records across all indicators (after filter)
-    total_indicators     int          Number of indicator codes fetched
-
-Environment variables (required):
-  AWS_REGION_NAME, S3_BUCKET, S3_FETCH_FOLDER
-
-Env-var fallbacks (also accepted as event keys):
-  GHO_INDICATORS        comma-separated indicator codes
-  GHO_SEARCH            keyword search term
-  GHO_YEAR              integer year
-  GHO_REGION            region code
-  GHO_SPATIAL_DIM_TYPE  spatial dim type filter
-
-Event keys (all optional):
-  input_indicators  list[str]        Explicit indicator codes to fetch
-  search            str              Keyword for catalogue search
-  year              int | list[int]  Client-side year filter
-  region            str | list[str]  Client-side SpatialDim filter
-  spatial_dim_type  str              Client-side SpatialDimType filter
+gho_function.py
+Fetches indicator data from the WHO Global Health Observatory (GHO) OData API.
+No API key required.
+Saves results to S3 and returns a summary.
+Event params (all optional):
+    Param               Type            Default
+    input_indicators    list[str]       env GHO_INDICATORS
+    search              str             env GHO_SEARCH
+    year                int|list[int]   env GHO_YEAR
+    region              str|list[str]   env GHO_REGION
+    spatial_dim_type    str             env GHO_SPATIAL_DIM_TYPE
+Env vars (required): AWS_REGION_NAME, S3_BUCKET, S3_FETCH_FOLDER
 """
-
 from __future__ import annotations
 
 import logging

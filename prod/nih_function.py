@@ -1,32 +1,16 @@
 """
-nih_function.py — AWS Lambda: NIH RePORTER research awards fetcher
-===================================================================
-No API key required (fully public NIH API).
-Calls nih_fetch.fetch_health_awards() for the heavy logic.
-Stores results in S3 and returns a summary.
-
-Payload structure stored in S3:
-  fetched_at   str          ISO-8601 UTC timestamp
-  source_api   str          API base URL
-  fetch_params dict         Echo of all resolved input parameters
-  data         dict         Fetch results:
-    projects               list[dict]
-    total_fetched          int
-    by_search              dict[str, int]
-    duplicates_removed     int
-    fiscal_years_queried   list[int]
-
-Environment variables (required):
-  AWS_REGION_NAME, S3_BUCKET, S3_FETCH_FOLDER
-
-Event keys (all optional):
-  fiscal_years    list[int]   FY to query.             Default: last 2 FY
-  page_size       int         Records per request.     Default: 500
-  max_records     int         Cap per search.          Default: 2000
-  mode            str         "all" | "categories" |
-                               "daly_text" | "disability_text"
-                                                        Default: "all"
-  include_active  bool        Include active projects. Default: True
+nih_function.py
+Fetches health research award data from the NIH RePORTER API.
+No API key required.
+Saves results to S3 and returns a summary.
+Event params (all optional):
+    Param           Type        Default
+    fiscal_years    list[int]   last 2 fiscal years
+    page_size       int         100
+    max_records     int         200
+    mode            str         "all" — or "categories", "daly_text", "disability_text"
+    include_active  bool        True
+Env vars (required): AWS_REGION_NAME, S3_BUCKET, S3_FETCH_FOLDER
 """
 
 from __future__ import annotations

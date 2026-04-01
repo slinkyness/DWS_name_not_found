@@ -4,10 +4,9 @@ icd_fetch.py — ICD-API client
 =====================================================
 Correct API base URLs (v2):
   Search  : GET https://id.who.int/icd/entity/search
-  Entity  : GET https://id.who.int/icd/release/11/mms/<code>
-  ICD-10  : GET https://id.who.int/icd/release/10/<code>
-  Root    : GET https://id.who.int/icd/release/11/mms
+  Entity  : GET https://id.who.int/icd/entity/
 """
+
 from __future__ import annotations
 import logging
 import os

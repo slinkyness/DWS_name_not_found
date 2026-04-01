@@ -1,34 +1,15 @@
 """
-current_function.py — AWS Lambda: Currents API health news fetcher
-===================================================================
+current_function.py
+Fetches health/science news from the Currents API.
 Reads CURRENT_API key from Secrets Manager.
-Calls current_fetch.fetch_health_news() for the heavy logic.
-Stores results in S3 and returns a summary.
-
-Payload structure stored in S3:
-  fetched_at   str          ISO-8601 UTC timestamp
-  source_api   str          API base URL
-  fetch_params dict         Echo of all resolved input parameters
-  data         dict         Fetch results:
-    articles           list[dict]
-    total_fetched      int
-    by_topic           dict[str, int]
-    duplicates_removed int
-    requests_used      int
-    rate_limit         dict
-    date_range         dict  {from, to}
-
-Environment variables (required):
-  AWS_REGION_NAME, S3_BUCKET, SECRET_NAME, S3_FETCH_FOLDER
-
-Event keys (all optional):
-  days_back    int         Articles from last N days.       Default: 7
-  language     str         ISO-639-1 code.                  Default: "en"
-  page_size    int         Per-request results (max 200).   Default: 200
-  topic_filter list[str]   Subset of category labels.       Default: all
-
-Valid category labels (topic_filter):
-  health, science, medical
+Saves results to S3 and returns a summary.
+Event params (all optional):
+    Param           Type        Default
+    days_back       int         7
+    language        str         "en"
+    page_size       int         50
+    topic_filter    list[str]   all — health, science, medical
+Env vars (required): AWS_REGION_NAME, S3_BUCKET, SECRET_NAME, S3_FETCH_FOLDER
 """
 
 from __future__ import annotations

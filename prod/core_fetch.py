@@ -1,10 +1,3 @@
-"""
-core_fetch.py — CORE API fetch logic
-=====================================
-Fetches works and outputs from the CORE API v3.
-Handles pagination and retries automatically.
-"""
-
 from __future__ import annotations
 
 import logging

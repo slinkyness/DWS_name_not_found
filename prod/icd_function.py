@@ -1,3 +1,16 @@
+"""
+icd_function.py
+Fetches ICD-11 entity data from the WHO API (id.who.int/icd/).
+Reads credentials (ICD_API_CLIENT_ID, ICD_API_CLIENT_SECRET) from Secrets Manager.
+Saves results to S3 and returns a summary.
+Event params (all optional):
+    Param       Type    Default
+    action      str     "query_details" — or "entity_detail"
+    query       str     "Depression"
+    uri         str     [] — used when action="entity_detail"
+Env vars (required): AWS_REGION_NAME, S3_BUCKET, SECRET_NAME, S3_FETCH_FOLDER
+"""
+
 from __future__ import annotations
 
 import logging

@@ -1,27 +1,14 @@
 """
-core_function.py — AWS Lambda: CORE API fetcher
-================================================
+core_function.py
+Fetches research works and outputs from the CORE API (api.core.ac.uk/v3).
 Reads CORE_KEY from Secrets Manager.
-Calls core_fetch.fetch_core_data() for the heavy logic.
-Stores results in S3 and returns a summary.
-
-Payload structure stored in S3:
-  fetched_at   str          ISO-8601 UTC timestamp
-  source_api   str          API base URL
-  fetch_params dict         Echo of all resolved input parameters
-  data         dict         Fetch results:
-    works              list[dict]   Works records
-    outputs            list[dict]   Outputs records
-    total_works        int
-    total_outputs      int
-
-Environment variables (required):
-  AWS_REGION_NAME, S3_BUCKET, SECRET_NAME, S3_FETCH_FOLDER
-
-Event keys (all optional):
-  limit        int         Results per page (max 100).      Default: 100
-  max_pages    int         Pages per entity.                Default: 10
-  entity_filter list[str]  Subset of ["works", "outputs"].  Default: both
+Saves results to S3 and returns a summary.
+Event params (all optional):
+    Param           Type        Default
+    limit           int         100
+    max_pages       int         10
+    entity_filter   list[str]   both (["works", "outputs"])
+Env vars (required): AWS_REGION_NAME, S3_BUCKET, SECRET_NAME, S3_FETCH_FOLDER
 """
 
 from __future__ import annotations

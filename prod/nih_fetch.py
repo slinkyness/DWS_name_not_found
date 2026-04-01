@@ -1,22 +1,3 @@
-"""
-nih_fetch.py — NIH RePORTER Research Awards Fetcher
-====================================================
-Endpoint : POST https://api.reporter.nih.gov/v2/projects/search
-Auth     : None — fully public API
-
-Three complementary searches merged on appl_id:
-  categories      RCDC spending category IDs (health/disease-burden)
-  daly_text       Advanced text: DALY, burden of disease language
-  disability_text Advanced text: disability, HRQOL language
-
-Returns fetch_health_awards() → dict with:
-  projects               list[dict]
-  total_fetched          int
-  by_search              dict[str, int]
-  duplicates_removed     int
-  fiscal_years_queried   list[int]
-"""
-
 from __future__ import annotations
 
 import json

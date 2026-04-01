@@ -1,19 +1,3 @@
-"""
-gho_fetch.py — WHO Global Health Observatory (GHO) Fetcher
-===========================================================
-Base URL : https://ghoapi.azureedge.net/api
-Auth     : None — fully public OData API
-
-Provides fetch_gho() as the single public entry point.
-
-Returns a dict with:
-  indicator_catalogue  list[dict]   Full GHO indicator list (code + name)
-  geo_catalogue        dict         All WHO regions and countries keyed by code
-  indicators           dict         {code: indicator_result_dict, ...}
-  total_fetched        int          Total records across all indicators (after filter)
-  total_indicators     int          Number of indicator codes fetched
-"""
-
 from __future__ import annotations
 
 import logging

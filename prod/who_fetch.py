@@ -1,21 +1,3 @@
-"""
-who_fetch.py — WHO News Fetcher
-================================
-Fetches from three public WHO API endpoints:
-  /api/news/newsitems           → general news
-  /api/news/diseaseoutbreaknews → disease outbreak news (DON)
-  /api/news/emergencies         → active emergencies
-
-No API key required.
-
-Returns a unified dict under the key "data" with:
-  general_news           list[dict]
-  disease_outbreak_news  list[dict]
-  emergencies            list[dict]
-  total_fetched          int
-  by_category            dict[str, int]   {"general_news": N, ...}
-"""
-
 from __future__ import annotations
 
 import logging
