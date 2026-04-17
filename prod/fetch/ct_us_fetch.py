@@ -37,16 +37,43 @@ HEADERS = {
 
 # Slim field list — keeps each response payload small
 FIELDS = ",".join([
-    "NCTId", "BriefTitle", "OfficialTitle", "OverallStatus",
-    "StartDate", "PrimaryCompletionDate", "StudyFirstPostDate",
-    "LastUpdatePostDate", "HasResults", "BriefSummary",
+    # Identifiers & titles
+    "NCTId", "OrgStudyId", "BriefTitle", "OfficialTitle",
+    # Status & dates
+    "OverallStatus", "HasResults",
+    "StartDate", "PrimaryCompletionDate", "CompletionDate",
+    "StudyFirstPostDate", "LastUpdatePostDate",
+    # Design
     "StudyType", "Phase", "EnrollmentCount",
-    "Condition", "Keyword", "InterventionType", "InterventionName",
-    "MinimumAge", "MaximumAge", "Sex", "LocationCountry",
-    "LeadSponsorName", "LeadSponsorClass", "PrimaryOutcomeMeasure",
+    # Conditions / therapeutic area
+    "Condition", "Keyword",
+    # MeshID to determine therapeutic area
+    "ConditionMeshId",
+    # Interventions
+    "InterventionType", "InterventionName",
+    # Eligibility (age group, age range, sex)
+    "MinimumAge", "MaximumAge", "Sex",
+    # Locations for recruitment status)
+    "LocationCountry", "LocationStatus",
+    # Sponsor
+    "LeadSponsorName", "LeadSponsorClass",
+    # Outcomes
+    "PrimaryOutcomeMeasure", "SecondaryOutcomeMeasure",
 ])
 
-DEFAULT_STATUSES = ["RECRUITING", "NOT_YET_RECRUITING", "ACTIVE_NOT_RECRUITING"]
+DEFAULT_STATUSES = ["RECRUITING",
+                    "NOT_YET_RECRUITING",
+                    "ACTIVE_NOT_RECRUITING",
+                    "COMPLETED",
+                    "ENROLLING_BY_INVITATION",
+                    "TERMINATED",
+                    "SUSPENDED",
+                    "WITHDRAWN",
+                    "AVAILABLE",
+                    "NO_LONGER_AVAILABLE",
+                    "TEMPORARILY_NOT_AVAILABLE",
+                    "APPROVED_FOR_MARKETING",
+                    "WITHHELD"]
 
 # ── Query groups ───────────────────────────────────────────────────────────────
 QUERY_GROUPS: list[tuple[str, str]] = [
@@ -91,69 +118,78 @@ def _get(params: dict) -> dict:
     return resp.json()
 
 
-# ── Formatter ─────────────────────────────────────────────────────────────────
-
-def _first(obj: Any, *keys: str, default: Any = "") -> Any:
-    for key in keys:
-        if isinstance(obj, dict):
-            obj = obj.get(key)
-        else:
-            return default
-        if obj is None:
-            return default
-    return obj if obj is not None else default
-
-
 def _format_trial(raw: dict, group: str) -> dict:
-    ps      = raw.get("protocolSection", {})
-    ident   = ps.get("identificationModule", {})
-    status  = ps.get("statusModule", {})
-    desc    = ps.get("descriptionModule", {})
-    design  = ps.get("designModule", {})
-    cond    = ps.get("conditionsModule", {})
-    arms    = ps.get("armsInterventionsModule", {})
-    elig    = ps.get("eligibilityModule", {})
-    locs    = ps.get("contactsLocationsModule", {})
-    spons   = ps.get("sponsorCollaboratorsModule", {})
-    outc    = ps.get("outcomesModule", {})
+    ps = raw.get("protocolSection", {})
+    ds = raw.get("derivedSection", {})
 
-    interventions = arms.get("interventions") or []
-    intr_names    = [i.get("name", "") for i in interventions if i.get("name")]
-    intr_types    = list({i.get("type", "") for i in interventions if i.get("type")})
+    ident = ps.get("identificationModule", {})
+    status = ps.get("statusModule", {})
+    design = ps.get("designModule", {})
+    cond = ps.get("conditionsModule", {})
+    arms = ps.get("armsInterventionsModule", {})
+    elig = ps.get("eligibilityModule", {})
+    locs = ps.get("contactsLocationsModule", {}).get("locations", [])
+    spons = ps.get("sponsorCollaboratorsModule", {})
+    outc = ps.get("outcomesModule", {})
 
-    locations  = locs.get("locations") or []
-    countries  = sorted({loc.get("country", "") for loc in locations if loc.get("country")})
+    interventions = arms.get("interventions", [])
+    intr_names = [i.get("name", None) for i in interventions]
+    intr_types = [i.get("type", None) for i in interventions]
 
-    outcomes    = outc.get("primaryOutcomes") or []
-    out_measures = [o.get("measure", "") for o in outcomes if o.get("measure")]
+    locations = [
+        {
+            "facility":           loc.get("facility", ""),
+            "city":               loc.get("city", ""),
+            "country":            loc.get("country", ""),
+            "recruitment_status": loc.get("status", ""),
+        }
+        for loc in locs
+    ]
+
+    primary_measures = [o.get("measure", None) for o in outc.get("primaryOutcomes", [])]
+    secondary_measures = [o.get("measure", None) for o in outc.get("secondaryOutcomes", [])]
+
+    org_study_id = ident.get("orgStudyIdInfo", {}).get("id", None)
+
+    meshes = ds.get("conditionBrowseModule", {}).get("meshes", [])
+    mesh_ids = list({m.get("id", None) for m in meshes})
 
     return {
-        "nct_id":             ident.get("nctId", ""),
+        "nct_id":             ident.get("nctId", None),
+        "sponsor_code":       org_study_id,
         "query_group":        group,
-        "brief_title":        ident.get("briefTitle", "").strip(),
-        "official_title":     ident.get("officialTitle", "").strip(),
-        "overall_status":     status.get("overallStatus", ""),
-        "has_results":        status.get("hasResults", False),
-        "start_date":         _first(status, "startDateStruct", "date"),
-        "primary_completion": _first(status, "primaryCompletionDateStruct", "date"),
-        "first_posted":       _first(status, "studyFirstPostDateStruct", "date"),
-        "last_updated":       _first(status, "lastUpdatePostDateStruct", "date"),
-        "brief_summary":      desc.get("briefSummary", "").strip(),
-        "study_type":         design.get("studyType", ""),
-        "phases":             design.get("phases") or [],
-        "enrollment":         _first(design, "enrollmentInfo", "count"),
-        "conditions":         cond.get("conditions") or [],
-        "keywords":           cond.get("keywords") or [],
+        "overall_status":     status.get("overallStatus", None),
+        "title":              ident.get("officialTitle", "").strip(),
+
+        "results":            status.get("hasResults", False),
+        "start_date":         status.get("startDateStruct", {}).get("date", None),
+        "end_date":           status.get("primaryCompletionDateStruct", {}).get("date", None),
+        "global_end_date":    status.get("completionDateStruct", {}).get("date", None),
+        "decision_date":      status.get("studyFirstPostDateStruct", {}).get("date", None),
+        "last_updated":       status.get("lastUpdatePostDateStruct", {}).get("date", None),
+
+        "phases":             design.get("phases", []),
+        "enrollment":         design.get("enrollmentInfo", {}).get("count", None),
+
+        "conditions":         cond.get("conditions", []),
+        "keywords":           cond.get("keywords", []),
+        "mesh_ids":           mesh_ids,
+
         "intervention_types": intr_types,
         "intervention_names": intr_names,
-        "min_age":            elig.get("minimumAge", ""),
-        "max_age":            elig.get("maximumAge", ""),
-        "sex":                elig.get("sex", ""),
-        "countries":          countries,
-        "lead_sponsor":       _first(spons, "leadSponsor", "name"),
-        "sponsor_class":      _first(spons, "leadSponsor", "class"),
-        "primary_outcomes":   out_measures,
-        "detail_url":         f"https://clinicaltrials.gov/study/{ident.get('nctId', '')}",
+
+        "min_age":            elig.get("minimumAge", None),
+        "max_age":            elig.get("maximumAge", None),
+        "sex":                elig.get("sex", None),
+
+        "locations":          locations,
+
+        "sponsor":            spons.get("leadSponsor", {}).get("name", None),
+        "sponsor_type":       spons.get("leadSponsor", {}).get("class", None),
+
+        "primary_outcomes":   primary_measures,
+        "secondary_outcomes": secondary_measures,
+
         "source":             "ClinicalTrials.gov",
     }
 
@@ -212,7 +248,7 @@ def _fetch_group(
                  label, len(raw_studies), data.get("totalCount", "?"), len(trials))
 
         for raw in raw_studies:
-            nct_id = _first(raw, "protocolSection", "identificationModule", "nctId")
+            nct_id = raw.get("protocolSection", {}).get("identificationModule", {}).get("nctId")
             if not nct_id or nct_id in seen_nct_ids:
                 continue
             seen_nct_ids.add(nct_id)
@@ -293,3 +329,41 @@ def fetch_health_trials(
         "phase_filter":       phase_filter,
         "updated_since":      updated_since,
     }
+
+if __name__ == "__main__":
+    from datetime import datetime, timezone
+    import json
+
+    SOURCE_API = "clinicaltrials.gov/api/v2/studies"
+    now = datetime.now(timezone.utc)
+    statuses      = None
+    phase_filter  = None
+    page_size     = 200
+    max_records   = 500
+    mode          = "all"
+    updated_since = None
+
+    result = fetch_health_trials(
+                statuses      = statuses,
+                phase_filter  = phase_filter,
+                page_size     = page_size,
+                max_records   = max_records,
+                mode          = mode,
+                updated_since = updated_since,
+            )
+    payload = {
+        "fetched_at":  now.isoformat(),
+        "source_api":  SOURCE_API,
+        "fetch_params": {
+            "statuses":     statuses,
+            "phase_filter": phase_filter,
+            "page_size":    page_size,
+            "max_records":  max_records,
+            "mode":         mode,
+            "updated_since": updated_since,
+        },
+        "data": result,
+    }
+
+    with open("../../data/ct_us_fetch.json", mode="w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, default=str, indent=4)

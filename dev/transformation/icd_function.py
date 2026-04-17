@@ -1,9 +1,8 @@
 import os
 from datetime import datetime, timezone
-
+from utils.config import data_dir
 import polars as pl
 
-from lambda_utils import save_to_s3_parquet
 
 NEEDED_COLS = [
     "icd_code", "icd_uri", "browser_url", "class_kind", "title",
@@ -130,14 +129,14 @@ def lambda_handler(event: dict, context) -> dict:
             ]
         )
     )
-    uri = save_to_s3_parquet(payload, bucket=S3_BUCKET, s3_folder=S3_FOLDER, s3_key=S3_FILE_KEY, timestamp=now)
+    # uri = save_to_s3_parquet(payload, bucket=S3_BUCKET, s3_folder=S3_FOLDER, s3_key=S3_FILE_KEY, timestamp=now)
     return {
         "statusCode": 200,
-        "saved_to": uri,
+        #"saved_to": uri,
     }
 
 def main():
-    input_path = "dist/icd11_mms_codes.jsonl"
+    input_path = data_dir / "icd11_mms_codes.jsonl"
     df = (
         pl.read_ndjson(input_path, infer_schema_length=None)
         .select(NEEDED_COLS)[:-1]
@@ -213,7 +212,8 @@ def main():
             ]
         )
     )
-    payload.write_parquet("icd_11.parquet", compression="zstd", use_pyarrow=False)
+    output = data_dir / "icd_11.parquet"
+    payload.write_parquet(output, compression="zstd", use_pyarrow=False)
 
 if __name__ == "__main__":
     main()

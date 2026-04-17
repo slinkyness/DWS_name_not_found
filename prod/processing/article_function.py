@@ -1,0 +1,92 @@
+"""
+article_processor_function.py — AWS Lambda: News article merger / deduplicator
+===============================================================================
+Triggered by an S3 Event when a new raw fetch file lands in the fetch folder.
+Supports three source formats:
+  - newsapi.org/v2/everything   (news_jsons)
+  - currentsapi.services        (current_jsons)
+  - who.int/                    (who_jsons)
+
+Processing rules (keyed on article URL):
+  NEW article   → append with version = 1
+  UPDATED       → same URL, newer published_at  → update fields, version += 1
+  DUPLICATE     → same URL, same / older date   → skip
+
+Output file
+-----------
+A single "master" JSON stored at a fixed S3 key:
+
+  {S3_PROCESSED_FOLDER}/articles_processed.json
+
+Environment variables (required):
+  AWS_REGION_NAME       e.g. "eu-central-1"
+  S3_BUCKET             e.g. "REDACTED_S3_BUCKET"
+  S3_PROCESSED_FOLDER   e.g. "processed"
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any
+
+import polars as pl
+
+from article_processing import load_and_merge
+from lambda_utils import ok_response, error_response
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
+log = logging.getLogger(__name__)
+
+# ── Config ─────────────────────────────────────────────────────────────────────
+REGION     = os.environ["AWS_REGION_NAME"]
+S3_BUCKET  = os.environ["S3_BUCKET"]
+PROCESSED_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
+
+PARQUET_KEY = f"{PROCESSED_FOLDER}/articles_processed.parquet"
+PARQUET_URI = f"s3://{S3_BUCKET}/{PARQUET_KEY}"
+
+
+# ── Lambda entry point ─────────────────────────────────────────────────────────
+
+def lambda_handler(event: dict, context: Any) -> dict:
+    now = datetime.now(timezone.utc)
+
+    # -- 1. Extract file from S3 event -----------------------------------------
+    record = event["Records"][0]["s3"]
+    bucket = record["bucket"]["name"]
+    key    = record["object"]["key"]
+    log.info("Triggered by s3://%s/%s", bucket, key)
+    file_path = f"s3://{bucket}/{key}"
+
+    # -- 2. Load current master -----------------------------------------------
+    try:
+        merged, stats = load_and_merge(file_path, PARQUET_URI, now)
+        log.info(
+            "  %s → new=%d  updated=%d  source_only=%d  total=%d",
+            key, stats["new"], stats["updated"], stats["source_only"], stats["total"],
+        )
+    except Exception as exc:
+        log.error("Failed to process %s: %s", key, exc)
+        return error_response(500, f"Processing failed for {key}: {exc}")
+
+    # ── Persist final merged result ───────────────────────────────────────────
+    if merged is None:
+        return error_response(500, "No data was merged.")
+
+    try:
+        merged.write_parquet(PARQUET_URI, compression="zstd", use_pyarrow=False)
+    except Exception as exc:
+        log.error("Failed to write output parquet: %s", exc)
+        return error_response(500, f"Output write failed: {exc}")
+
+    return ok_response({
+        "processed_at": now.isoformat(),
+        "source_key": key,
+        "rows_added": stats["new"],
+        "rows_updated": stats["updated"],
+        "total_rows": len(merged),
+        "output_uri": PARQUET_URI,
+    })

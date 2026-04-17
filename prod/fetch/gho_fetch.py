@@ -9,10 +9,10 @@ log = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 GHO_BASE = "https://ghoapi.azureedge.net/api"
-TIMEOUT  = 30
+TIMEOUT = 30
 
 HEADERS = {
-    "Accept":     "application/json",
+    "Accept": "application/json",
     "User-Agent": "GHO-Indicators-Fetcher/1.0",
 }
 
@@ -89,21 +89,16 @@ def fetch_geo_catalogue() -> dict[str, dict]:
 
 # ── Indicator data ─────────────────────────────────────────────────────────────
 
-def _clean_record(r: dict, geo_lookup: dict[str, dict]) -> dict:
+def _clean_record(r: dict) -> dict:
     sdt         = r.get("SpatialDimType", "")
     spatial_dim = r.get("SpatialDim", "") or ""
-    entry       = geo_lookup.get(spatial_dim, {})
 
     if sdt == "REGION":
         country_code = ""
-        country_name = ""
         region_code  = spatial_dim
-        region_name  = entry.get("name", spatial_dim)
     elif sdt == "COUNTRY":
         country_code = spatial_dim
-        country_name = entry.get("name", spatial_dim)
-        region_code  = entry.get("region_code", r.get("ParenLocationCode") or "")
-        region_name  = entry.get("region_name", region_code)
+        region_code  = r.get("ParenLocationCode", "")
     else:
         country_code = country_name = region_code = region_name = ""
 
@@ -112,9 +107,7 @@ def _clean_record(r: dict, geo_lookup: dict[str, dict]) -> dict:
         "spatial_dim_type":  sdt,
         "spatial_dim":       spatial_dim,
         "country_code":      country_code,
-        "country_name":      country_name,
         "region_code":       region_code,
-        "region_name":       region_name,
         "year":              r.get("TimeDim"),
         "dim1_type":         r.get("Dim1Type"),
         "dim1":              r.get("Dim1"),
@@ -131,7 +124,6 @@ def _clean_record(r: dict, geo_lookup: dict[str, dict]) -> dict:
 
 def fetch_indicator(
     indicator_code:   str,
-    geo_lookup:       dict[str, dict],
     year:             int | list[int] | None = None,
     region:           str | list[str] | None = None,
     spatial_dim_type: str | None = None,
@@ -158,7 +150,7 @@ def fetch_indicator(
     available_sdts:    set[str]   = set()
 
     for r in raw:
-        cleaned = _clean_record(r, geo_lookup)
+        cleaned = _clean_record(r)
         if cleaned["year"] is not None:
             available_years.add(cleaned["year"])
         if cleaned["spatial_dim"]:
@@ -180,29 +172,24 @@ def fetch_indicator(
     )
 
     return {
-        "indicator_code":          indicator_code,
         "records":                 records,
         "total_fetched":           total_fetched,
         "total_after_filter":      len(records),
         "available_years":         sorted(available_years),
         "available_regions":       sorted(available_regions),
         "available_spatial_types": sorted(available_sdts),
-        "fetch_params": {
-            "year":             sorted(year_set)   if year_set   else None,
-            "region":           sorted(region_set) if region_set else None,
-            "spatial_dim_type": sdt_filter,
-        },
     }
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
 
 def fetch_gho(
-    input_indicators: list[str]             = (),
-    search:           str | None            = None,
-    year:             int | list[int] | None = None,
-    region:           str | list[str] | None = None,
-    spatial_dim_type: str | None            = None,
+    input_indicators: list[str]                 = (),
+    search:           str | None                = None,
+    year:             int | list[int] | None    = None,
+    region:           str | list[str] | None    = None,
+    spatial_dim_type: str | None                = None,
+    get_catalogue:    bool                      = False,
 ) -> dict[str, Any]:
     """
     Fetch GHO catalogues and any requested indicator data.
@@ -221,10 +208,13 @@ def fetch_gho(
       total_indicators     int   len(indicators)
     """
     log.info("Fetching indicator catalogue and geo catalogue...")
-    indicator_catalogue = fetch_all_indicators()
-    geo_catalogue       = fetch_geo_catalogue()
+    indicator_catalogue = geo_catalogue = []
+    if get_catalogue:
+        indicator_catalogue = fetch_all_indicators()
+        geo_catalogue       = fetch_geo_catalogue()
 
     codes: list[str] = list(input_indicators)
+
     if search:
         log.info("Searching indicator catalogue for: %s", search)
         matches  = fetch_all_indicators(search=search)
@@ -236,41 +226,60 @@ def fetch_gho(
         log.info("Search '%s' matched %d indicator(s), total codes: %d",
                  search, len(matches), len(codes))
 
-    indicators: dict[str, Any] = {}
+    flat_records: list[dict] = []
+    total_fetched = 0
+    total_indicators = 0
+
     for code in codes:
-        indicators[code] = fetch_indicator(
-            code,
-            geo_lookup       = geo_catalogue,
-            year             = year,
-            region           = region,
-            spatial_dim_type = spatial_dim_type,
+        result = fetch_indicator(
+            indicator_code=code,
+            year=year,
+            region=region,
+            spatial_dim_type=spatial_dim_type,
         )
+        total_indicators += 1
+        total_fetched += result["total_after_filter"]
+        if result and "records" in result:
+            flat_records.extend(result["records"])
 
-    total_records = sum(v["total_after_filter"] for v in indicators.values())
-
-    log.info("Done — %d indicator(s), %d total records", len(indicators), total_records)
+    log.info("Done — %d indicator(s), %d total records", total_indicators, total_fetched)
 
     return {
         "indicator_catalogue": indicator_catalogue,
         "geo_catalogue":       geo_catalogue,
-        "indicators":          indicators,
-        "total_fetched":       total_records,
-        "total_indicators":    len(indicators),
+        "records":             flat_records,
+        "total_fetched":       total_fetched,
+        "total_indicators":    total_indicators,
     }
 
-
 def main():
-    import json
-    result = fetch_gho(
-        input_indicators=[],
-        search="DALY",
-        year=None,
-        region=None,
-        spatial_dim_type=None,
+    import polars as pl
+    now = datetime.now(timezone.utc)
+    input_indicators = (
+        pl.read_parquet("../../data/gho_metadata.parquet")
+        .filter(pl.col("dimension") == "GHO_IHME_CAUSE")
+        .select("id")
+        .to_series()
+        .to_list()
     )
-
-    with open("../data/gho_result.json", "w", encoding="utf-8") as f:
-        json.dump(result, f, ensure_ascii=False, indent=4)
+    result = fetch_gho(input_indicators=input_indicators)
+    payload = {
+        "fetched_at":  now.isoformat(),
+        "source_api":  "GHO",
+        "fetch_params": {
+            "input_indicators": input_indicators,
+            "search":           None,
+            "year":             None,
+            "region":           None,
+            "spatial_dim_type": None,
+            "get_catalogue":    False,
+        },
+        "data": result,
+    }
+    with open("../../data/gho_example.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=4)
 
 if __name__ == "__main__":
+    from datetime import datetime, timezone
+    import json
     main()

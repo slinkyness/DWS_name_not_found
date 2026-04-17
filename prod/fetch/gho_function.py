@@ -46,7 +46,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
 
     search           = event.get("search")           or os.environ.get("GHO_SEARCH")
     spatial_dim_type = event.get("spatial_dim_type") or os.environ.get("GHO_SPATIAL_DIM_TYPE")
-
+    get_catalogue    = event.get("catalogue", False)
     year_raw = event.get("year") or os.environ.get("GHO_YEAR")
     year: int | list[int] | None = (
         [int(y) for y in year_raw] if isinstance(year_raw, list)
@@ -68,6 +68,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
             year             = year,
             region           = region,
             spatial_dim_type = spatial_dim_type,
+            get_catalogue    = get_catalogue,
         )
     except requests.HTTPError as exc:
         log.error("HTTP error: %s", exc)
@@ -86,6 +87,7 @@ def lambda_handler(event: dict, context: Any) -> dict:
             "year":             year,
             "region":           region,
             "spatial_dim_type": spatial_dim_type,
+            "get_catalogue":    get_catalogue,
         },
         "data": result,
     }

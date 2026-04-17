@@ -38,7 +38,7 @@ SECRET_NAME = os.environ["SECRET_NAME"]
 S3_PREFIX   = os.environ["S3_FETCH_FOLDER"]
 SECRET_KEY  = "NEWS_API"
 S3_KEY      = "news"
-SOURCE_API  = "newsapi.org/v2/everything"
+SOURCE_API  = "newsapi.org/v2/top-headlines"
 
 def lambda_handler(event: dict, context: Any) -> dict:
     now = datetime.now(timezone.utc)
@@ -51,27 +51,22 @@ def lambda_handler(event: dict, context: Any) -> dict:
         return error_response(500, f"Secret retrieval failed: {exc}")
 
     # -- 2. Parameters ---------------------------------------------------------
-    days_back    = int(event.get("days_back",  os.environ.get("NEWSAPI_DAYS_BACK",  7)))
-    language     =     event.get("language",   os.environ.get("NEWSAPI_LANGUAGE",   "en"))
-    page_size    = int(event.get("page_size",  os.environ.get("NEWSAPI_PAGE_SIZE",  100)))
-    max_pages    = int(event.get("max_pages",  os.environ.get("NEWSAPI_MAX_PAGES",  1)))
-    topic_filter =     event.get("topic_filter")   # None → all groups
+    page_size = int(event.get("page_size", os.environ.get("NEWSAPI_PAGE_SIZE", 100)))
+    country = event.get("country", os.environ.get("NEWSAPI_COUNTRY", ""))
+    category_filter = event.get("category_filter")  # None → all categories
 
     log.info(
-        "Starting fetch — days_back=%d  language=%s  page_size=%d  "
-        "max_pages=%d  topic_filter=%s",
-        days_back, language, page_size, max_pages, topic_filter,
+        "Starting fetch — page_size=%d  country=%r  category_filter=%s",
+        page_size, country, category_filter,
     )
 
     # -- 3. Fetch --------------------------------------------------------------
     try:
         result = fetch_health_news(
-            api_key      = api_key,
-            days_back    = days_back,
-            language     = language,
-            page_size    = page_size,
-            max_pages    = max_pages,
-            topic_filter = topic_filter,
+            api_key         = api_key,
+            page_size       = page_size,
+            country         = country,
+            category_filter = category_filter,
         )
     except Exception as exc:
         log.error("fetch_health_news failed: %s", exc)
@@ -82,11 +77,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
         "fetched_at":  now.isoformat(),
         "source_api":  SOURCE_API,
         "fetch_params": {
-            "days_back":    days_back,
-            "language":     language,
-            "page_size":    page_size,
-            "max_pages":    max_pages,
-            "topic_filter": topic_filter,
+            "page_size":       page_size,
+            "country":         country,
+            "category_filter": category_filter,
         },
         "data": result,
     }
@@ -106,12 +99,13 @@ def lambda_handler(event: dict, context: Any) -> dict:
         "s3_uri":             s3_uri,
         "total_fetched":      data["total_fetched"],
         "by_topic":           data["by_topic"],
+        "by_category":        data["by_category"],
         "duplicates_removed": data["duplicates_removed"],
-        "date_range":         data["date_range"],
+        "requests_used":      data["requests_used"],
     }
 
     log.info(
-        "Done — %d articles across %d topics saved to %s",
-        data["total_fetched"], len(data["by_topic"]), s3_uri,
+        "Done — %d articles across %d categories, %d API requests used, saved to %s",
+        data["total_fetched"], len(data["by_category"]), data["requests_used"], s3_uri,
     )
     return ok_response(summary)
