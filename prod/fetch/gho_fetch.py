@@ -251,35 +251,3 @@ def fetch_gho(
         "total_fetched":       total_fetched,
         "total_indicators":    total_indicators,
     }
-
-def main():
-    import polars as pl
-    now = datetime.now(timezone.utc)
-    input_indicators = (
-        pl.read_parquet("../../data/gho_metadata.parquet")
-        .filter(pl.col("dimension") == "GHO_IHME_CAUSE")
-        .select("id")
-        .to_series()
-        .to_list()
-    )
-    result = fetch_gho(input_indicators=input_indicators)
-    payload = {
-        "fetched_at":  now.isoformat(),
-        "source_api":  "GHO",
-        "fetch_params": {
-            "input_indicators": input_indicators,
-            "search":           None,
-            "year":             None,
-            "region":           None,
-            "spatial_dim_type": None,
-            "get_catalogue":    False,
-        },
-        "data": result,
-    }
-    with open("../../data/gho_example.json", "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=4)
-
-if __name__ == "__main__":
-    from datetime import datetime, timezone
-    import json
-    main()

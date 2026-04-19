@@ -11,14 +11,14 @@ from datetime import datetime
 from pathlib import Path
 
 import polars as pl
-from lambda_utils import load_s3_parquet
+from process_lambda_utils import load_s3_parquet
 
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 OUT_BUCKET = os.environ["S3_BUCKET"]
 S3_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
 GHO_META_URI   = f"s3://{OUT_BUCKET}/{S3_FOLDER}/gho_metadata.parquet"
-IHME_META_URI    = f"s3://{OUT_BUCKET}/{S3_FOLDER}/ihme_dimension_map.parquet"
+IHME_META_URI    = f"s3://{OUT_BUCKET}/{S3_FOLDER}/ihme_metadata.parquet"
 HEALTH_DATA_URI   = f"s3://{OUT_BUCKET}/{S3_FOLDER}/health_data.parquet"
 
 
@@ -75,14 +75,13 @@ def _load_metadata() -> pl.DataFrame:
                 ihme_subset.select(gho_metadata.columns)
              ], how="vertical")
         )
-        enriched.write_parquet(GHO_META_URI)
+        enriched.write_parquet(GHO_META_URI, compression="zstd", use_pyarrow=False)
         log.info(f"Enriched Metadata, saved to {GHO_META_URI}")
         return enriched
     return gho_metadata
 
 
 def transform(df: pl.DataFrame) -> pl.DataFrame:
-
     metadata = _load_metadata()
     cause_lut = make_lookup(metadata, "gho_ihme_cause", "cause")
     country_lut = make_lookup(metadata, "gho_ihme_country", "location")
@@ -126,7 +125,7 @@ def transform(df: pl.DataFrame) -> pl.DataFrame:
             pl.col("last_updated")
             .str.to_datetime(format="%Y-%m-%dT%H:%M:%S%#z", time_unit="us")
             .dt.convert_time_zone("UTC")
-            .alias("updated_on"),
+            .alias(DATE_COL),
         )
         .with_columns(
             pl.concat_str(

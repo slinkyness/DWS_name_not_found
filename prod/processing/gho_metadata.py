@@ -14,14 +14,16 @@ Environment variables:
 from __future__ import annotations
 
 import logging
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
+from pathlib import Path
 
 import boto3
 import polars as pl
 
-from lambda_utils import (
+from process_lambda_utils import (
     save_to_s3_parquet,
     ok_response,
     error_response,
@@ -33,11 +35,13 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3 = boto3.client("s3")
-OUT_BUCKET = os.environ["S3_BUCKET"]
-S3_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
+S3_BUCKET = os.environ["S3_BUCKET"]
+OUT_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
+SOURCE_FOLDER = os.environ["S3_SOURCE_FOLDER"]
+
 # ── Expected file name stems ────────────────────────────────
 _GHO_CATALOGUE = "gho_catalogue"
-GHO_META_URI   = f"s3://{OUT_BUCKET}/{S3_FOLDER}/gho_metadata.parquet"
+GHO_META_URI   = f"s3://{S3_BUCKET}/{OUT_FOLDER}/gho_metadata.parquet"
 
 GHO_TO_IHME_CAUSE: dict[str, int] = {
     # ── Direct disease matches ─────────────────────────────────────────────
@@ -68,15 +72,23 @@ GHO_TO_IHME_SEX = {
     "SEX_MLE":  1,
 }
 
-def _extract_metadata(in_bucket: str) -> pl.DataFrame:
+def _extract_metadata(in_bucket: str, folder:str) -> pl.DataFrame:
     """
     Build metadate lookup DataFrames
 
     Returns:
         (lookup_nested, lookup_flat)
     """
-    key = find_s3_key(in_bucket, "raw", _GHO_CATALOGUE)
-    raw = pl.read_json(f"s3://{in_bucket}/{key}").unnest("data")
+    key = find_s3_key(in_bucket, folder, _GHO_CATALOGUE)
+    tmp_path = f"/tmp/{Path(key).name}"
+    try:
+        logger.info("Downloading s3://%s/%s → %s", in_bucket, key, tmp_path)
+        s3.download_file(in_bucket, key, tmp_path)
+    except Exception as exc:
+        logger.error("Failed to download source file: %s", exc)
+        return error_response(500, f"Download failed: {exc}")
+
+    raw = pl.read_json(tmp_path).unnest("data")
     metadata = pl.concat([
         raw.select("indicator_catalogue")
         .explode("indicator_catalogue")
@@ -114,16 +126,16 @@ def _extract_metadata(in_bucket: str) -> pl.DataFrame:
 
 def lambda_handler(event: dict, context: Any) -> dict:
     try:
-        in_bucket  = event.get("in_bucket",  os.environ["IN_BUCKET"])
-        out_bucket = event.get("out_bucket", os.environ["S3_BUCKET"])
-        s3_folder  = event.get("s3_folder",  os.environ["S3_PROCESSED_FOLDER"])
+        s3_bucket = event.get("s3_bucket", os.environ["S3_BUCKET"])
+        in_folder = event.get("in_folder", os.environ["S3_SOURCE_FOLDER"])
+        out_folder  = event.get("out_folder",  os.environ["S3_PROCESSED_FOLDER"])
 
         logger.info(
-            "IN_BUCKET=%s  S3_BUCKET=%s  S3_PROCESSED_FOLDER=%s",
-            in_bucket, out_bucket, s3_folder,
+            "S3_BUCKET=%s IN_FOLDER=%s S3_PROCESSED_FOLDER=%s",
+            s3_bucket, in_folder, out_folder,
         )
 
-        metadata = _extract_metadata(in_bucket)
+        metadata = _extract_metadata(s3_bucket, in_folder)
     except Exception as exc:
         logger.error("Failed to transform %s: %s", _GHO_CATALOGUE, exc)
         return error_response(500, f"Transform failed: {exc}")

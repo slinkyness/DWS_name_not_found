@@ -12,7 +12,6 @@ Both arrive with the same envelope:
 -----------------------
 url            Utf8
 topic          Utf8
-source         Utf8                  newsapi only; not implemented for currents
 author         Utf8
 title          Utf8
 description    Utf8
@@ -33,7 +32,7 @@ from datetime import datetime, timezone
 
 import polars as pl
 
-from lambda_utils import load_s3_parquet, upsert_by_date
+from process_lambda_utils import load_s3_parquet, upsert_by_date
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ UPSERT_KEY = "url"
 DATE_COL = "published_at"
 SOURCE_COL = "source_apis"
 CANONICAL_COL = [
-    UPSERT_KEY, "topic", "source", "author", "title",
+    UPSERT_KEY, "topic", "author", "title",
     "description", "image_url", DATE_COL, "language",
     "category", SOURCE_COL, "first_seen_at", "last_seen_at", "version",
 ]
@@ -82,6 +81,8 @@ def normalise(raw: pl.DataFrame, now_str: str) -> pl.DataFrame:
         .explode("articles")
         .unnest("articles")
         .with_columns(
+            pl.when("newsapi" in source_api)
+            .then(pl.lit("en").alias("language")),
             pl.col(DATE_COL).str.to_datetime(date_fmt, strict=False).dt.replace_time_zone("UTC"),
             pl.col("author").replace("#author.fullName}", None),
             pl.col(UPSERT_KEY).str.replace(r"\?.*", "").str.strip_suffix("/"),
@@ -187,7 +188,9 @@ def load_and_merge(
     Read one fetch file, normalise it, and upsert into the master Parquet.
 
     Args:
-        fetch_path:  Local path or s3:// URI of the raw JSON fetch file.
+        fetch_path:  Local path to the JSON fetch file (e.g. ``/tmp/fetch.json``).
+                     Streaming to /tmp/ before calling this function is the
+                     caller's responsibility (``pl.read_json`` cannot read S3 URIs).
         parquet_uri: s3:// URI (or local path) of the master articles Parquet.
         now:         Current UTC datetime (used for provenance timestamps).
 

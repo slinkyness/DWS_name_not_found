@@ -23,7 +23,7 @@ from typing import Any
 
 import polars as pl
 
-from lambda_utils import load_s3_parquet, upsert_by_date, ok_response, error_response
+from process_lambda_utils import load_s3_parquet, upsert_by_date, ok_response, error_response
 from ihme_process import transform, HEALTH_DATA_URI, UPSERT_KEY, DATE_COL
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")

@@ -10,9 +10,9 @@ Correct API base URLs (v2):
 from __future__ import annotations
 import logging
 import os
-import time
 from typing import Any, List, Dict
 
+from datetime import datetime, timezone
 import requests
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
@@ -60,7 +60,7 @@ def get_access_token(force_refresh: bool = False) -> str:
         requests.RequestException – on auth failure
         ValueError                – if the response has no access_token
     """
-    now = time.time()
+    now = datetime.now(timezone.utc)
     if not force_refresh and _TOKEN_CACHE["token"] and now < _TOKEN_CACHE["expires_at"]:
         log.debug("Using cached access token")
         return _TOKEN_CACHE["token"]

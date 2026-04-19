@@ -3,12 +3,15 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from pathlib import Path
 
 import polars as pl
+import boto3
 
-from lambda_utils import load_s3_parquet, upsert_by_date, ok_response, error_response
+from process_lambda_utils import load_s3_parquet, upsert_by_date, ok_response, error_response
 from gho_process import transform, HEALTH_DATA_URI, UPSERT_KEY, DATE_COL
 
+s3 = boto3.client("s3")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
@@ -19,12 +22,17 @@ def lambda_handler(event: dict, context: Any) -> dict:
     record = event["Records"][0]["s3"]
     bucket = record["bucket"]["name"]
     key    = record["object"]["key"]
-    log.info("Triggered by s3://%s/%s", bucket, key)
-
     # -- 2. Read & transform ---------------------------------------------------
+    tmp_path = f"/tmp/{Path(key).name}"
+    try:
+        log.info("Downloading s3://%s/%s → %s", bucket, key, tmp_path)
+        s3.download_file(bucket, key, tmp_path)
+    except Exception as exc:
+        log.error("Failed to download source file: %s", exc)
+        return error_response(500, f"Download failed: {exc}")
     try:
         raw = (
-            pl.read_json(f"s3://{bucket}/{key}")
+            pl.read_json(tmp_path)
             .unnest("data")
             .select("records")
             .explode("records")

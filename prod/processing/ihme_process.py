@@ -1,15 +1,21 @@
 """
-ihme_function.py — IHME GBD CSV transformer
-========================================================
+ihme_process.py — IHME GBD CSV transformer (pure logic, no metadata I/O)
+=========================================================================
 Reads raw IHME CSVs and transforms them into a clean, upsert-ready
-DataFrame. The Lambda handler (ihme_lambda.py) owns I/O and upsert.
-Metadata (id→name mappings) is maintained as a separate parquet dimension table.
+DataFrame. The Lambda handler (ihme_function.py) owns data I/O and upsert.
+Metadata extraction is a separate concern handled by ihme_metadata.py.
+
+Public API
+----------
+transform(df, now)       -> pl.DataFrame   — structural cleanup only
+extract_metadata(df)     -> pl.DataFrame   — id→name dimension rows
+merge_metadata(existing, new) -> (pl.DataFrame, int)  — deduplicated merge
 
 Handles two dataset variants:
   - Cause of Death / Injury
   - Etiology
 
-`ingested_at` is stamped onto every incoming row at transform time so
+`last_updated` is stamped onto every incoming row at transform time so
 that upsert_by_date (keyed on the composite row_key) can decide which
 version of a row is newer.
 
@@ -25,12 +31,10 @@ from datetime import datetime
 import polars as pl
 import pycountry
 
-from lambda_utils import load_s3_parquet
-
 OUT_BUCKET = os.environ["S3_BUCKET"]
 S3_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
 
-HEALTH_DATA_URI   = f"s3://{OUT_BUCKET}/{S3_FOLDER}/health_data.parquet"
+HEALTH_DATA_URI = f"s3://{OUT_BUCKET}/{S3_FOLDER}/health_data.parquet"
 METADATA_URI    = f"s3://{OUT_BUCKET}/{S3_FOLDER}/ihme_dimension_map.parquet"
 
 MEASURE_COLS    = {"val", "upper", "lower"}
@@ -69,35 +73,31 @@ def _build_lookup_map():
         for alias in getattr(country, 'common_name', []):
             lookup[alias] = country.alpha_3
 
-    # Handle Fuzzy Search (Optional: Pre-calculate for known problematic names)
-    # Note: Fuzzy search is expensive. If you have a specific list of problematic names, resolve them here.
-    # If you need dynamic fuzzy search for *any* input, you must use a function, but it won't be "vectorized" in the C-sense.
-
     return lookup
 
 
 LOOKUP_MAP = _build_lookup_map()
 
-def _load_metadata() -> pl.DataFrame:
-    """Load the dimension map, or return an empty frame on first run."""
-    result = load_s3_parquet(METADATA_URI)
-    if result is None:
-        log.info("No existing metadata — starting fresh")
-        return pl.DataFrame(
-            {"dimension": [], "id": [], "name": []},
-            schema={"dimension": pl.String, "id": pl.Int64, "name": pl.String},
-        )
-    return result if isinstance(result, pl.DataFrame) else result.collect()
+def _detect_pairs(df: pl.DataFrame) -> list[tuple[str, str, str]]:
+    """Return (id_col, name_col, base_name) tuples for all *_id / *_name pairs."""
+    cols = set(df.columns)
+    return [
+        (col, f"{col[:-3]}_name", col[:-3])
+        for col in df.columns
+        if col.endswith("_id") and f"{col[:-3]}_name" in cols
+    ]
 
-def _extract_metadata(df: pl.DataFrame, pairs: list) -> pl.DataFrame:
+
+def _extract_metadata_rows(df: pl.DataFrame, pairs: list) -> pl.DataFrame:
+    """Build a (dimension, id, name) frame from detected id/name column pairs."""
     return (
         pl.concat([
-        df.select(
-            pl.lit(base).alias("dimension"),
-            pl.col(id_col).cast(pl.Int64).alias("id"),
-            pl.col(name_col).alias("name"),
-        ).unique(subset=["id"])
-        for id_col, name_col, base in pairs
+            df.select(
+                pl.lit(base).alias("dimension"),
+                pl.col(id_col).cast(pl.Int64).alias("id"),
+                pl.col(name_col).alias("name"),
+            ).unique(subset=["id"])
+            for id_col, name_col, base in pairs
         ])
         .with_columns(
             pl.when(pl.col("dimension") == "location")
@@ -107,10 +107,33 @@ def _extract_metadata(df: pl.DataFrame, pairs: list) -> pl.DataFrame:
         )
     )
 
-def _merge_metadata(
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def extract_metadata(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Extract id→name dimension rows from a raw IHME DataFrame.
+
+    Returns a DataFrame with columns (dimension, id, name) containing
+    unique id→name mappings for every *_id / *_name column pair found.
+    Location names are normalised to ISO-3 codes via LOOKUP_MAP.
+
+    This function performs no S3 I/O — callers are responsible for
+    loading/saving the dimension table.  See ihme_metadata.py.
+    """
+    pairs = _detect_pairs(df)
+    return _extract_metadata_rows(df, pairs)
+
+
+def merge_metadata(
     existing: pl.DataFrame,
     new: pl.DataFrame,
 ) -> tuple[pl.DataFrame, int]:
+    """
+    Merge *new* metadata rows into *existing*, deduplicating by (dimension, id).
+
+    Returns (merged_df, n_added) where n_added is the net number of new rows.
+    """
     merged = (
         pl.concat([existing, new])
         .unique(subset=["dimension", "id"], keep="first")
@@ -119,18 +142,28 @@ def _merge_metadata(
     return merged, len(merged) - len(existing)
 
 
+def empty_metadata() -> pl.DataFrame:
+    """Return an empty metadata frame with the canonical schema."""
+    return pl.DataFrame(
+        {"dimension": [], "id": [], "name": []},
+        schema={"dimension": pl.String, "id": pl.Int64, "name": pl.String},
+    )
+
+
 def transform(df: pl.DataFrame, now: datetime) -> pl.DataFrame:
     """
-    Transform a raw IHME CSV DataFrame.
+    Transform a raw IHME CSV DataFrame (structural cleanup only).
 
     Steps
     -----
-    1. Detect id/name column pairs and extract dimension metadata.
-    2. Merge new metadata into the persisted dimension table on S3.
-    3. Drop ``*_name`` columns; rename ``*_id`` → base dimension name.
-    4. Fill optional variant columns with None when absent.
-    5. Synthesise a ``row_key`` from all dimension (non-measure) columns.
-    6. Stamp ``ingested_at`` from *now* so upsert_by_date can compare freshness.
+    1. Detect id/name column pairs.
+    2. Drop ``*_name`` columns; rename ``*_id`` → base dimension name.
+    3. Fill optional variant columns (etiology) with None when absent.
+    4. Synthesise a ``row_key`` from all dimension (non-measure) columns.
+    5. Stamp ``last_updated`` from *now* so upsert_by_date can compare freshness.
+
+    Note: Metadata extraction and persistence is handled separately by
+    ihme_metadata.py.  This function performs no S3 I/O.
 
     Args:
         df:  Raw DataFrame read directly from the source CSV.
@@ -139,22 +172,8 @@ def transform(df: pl.DataFrame, now: datetime) -> pl.DataFrame:
     Returns:
         Cleaned DataFrame ready to be passed to upsert_by_date.
     """
-    cols  = set(df.columns)
-    pairs = [
-        (col, f"{col[:-3]}_name", col[:-3])
-        for col in df.columns
-        if col.endswith("_id") and f"{col[:-3]}_name" in cols
-    ]
+    pairs = _detect_pairs(df)
 
-    # -- Metadata --------------------------------------------------------------
-    new_metadata   = _extract_metadata(df, pairs)
-    existing_meta  = _load_metadata()
-    merged_meta, n = _merge_metadata(existing_meta, new_metadata)
-    if n:
-        merged_meta.write_parquet(METADATA_URI, compression="zstd", use_pyarrow=False)
-        log.info("Metadata: %d new id→name pairs added", n)
-
-    # -- Structural cleanup ----------------------------------------------------
     df = (
         df
         .drop(pl.selectors.ends_with("_name"))

@@ -14,9 +14,9 @@ Processing rules (keyed on article URL):
 
 Output file
 -----------
-A single "master" JSON stored at a fixed S3 key:
+A single "master" parquet stored at a fixed S3 key:
 
-  {S3_PROCESSED_FOLDER}/articles_processed.json
+  {S3_PROCESSED_FOLDER}/articles_processed.parquet
 
 Environment variables (required):
   AWS_REGION_NAME       e.g. "eu-central-1"
@@ -30,18 +30,21 @@ import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
+from pathlib import Path
 
+import boto3
 import polars as pl
 
-from article_processing import load_and_merge
-from lambda_utils import ok_response, error_response
+from article_process import load_and_merge
+from process_lambda_utils import ok_response, error_response
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 log = logging.getLogger(__name__)
 
+s3 = boto3.client("s3")
+
 # ── Config ─────────────────────────────────────────────────────────────────────
-REGION     = os.environ["AWS_REGION_NAME"]
 S3_BUCKET  = os.environ["S3_BUCKET"]
 PROCESSED_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
 
@@ -59,11 +62,18 @@ def lambda_handler(event: dict, context: Any) -> dict:
     bucket = record["bucket"]["name"]
     key    = record["object"]["key"]
     log.info("Triggered by s3://%s/%s", bucket, key)
-    file_path = f"s3://{bucket}/{key}"
 
     # -- 2. Load current master -----------------------------------------------
+    tmp_path = f"/tmp/{Path(key).name}"
     try:
-        merged, stats = load_and_merge(file_path, PARQUET_URI, now)
+        log.info("Downloading s3://%s/%s → %s", bucket, key, tmp_path)
+        s3.download_file(bucket, key, tmp_path)
+    except Exception as exc:
+        log.error("Failed to download source file: %s", exc)
+        return error_response(500, f"Download failed: {exc}")
+
+    try:
+        merged, stats = load_and_merge(tmp_path, PARQUET_URI, now)
         log.info(
             "  %s → new=%d  updated=%d  source_only=%d  total=%d",
             key, stats["new"], stats["updated"], stats["source_only"], stats["total"],
