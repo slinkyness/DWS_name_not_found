@@ -66,6 +66,9 @@ def transform(df: pl.DataFrame) -> pl.DataFrame:
             pl.col("icd_code"),
         )
         .filter(pl.col("entity_id").is_not_null())
+        .group_by("entity_id")
+        .agg(pl.col("icd_code"))
+        .with_columns(pl.col("icd_code").list.join("&"))
     )
     excl_resolved = (
         df.select("_row", "exclusion")
@@ -98,7 +101,12 @@ def transform(df: pl.DataFrame) -> pl.DataFrame:
             .list.eval(
                 pl.element()
                 .str.extract(ENTITY_ID_RE)
-                .replace_strict(id_lut["entity_id"], id_lut["icd_code"], default=None)
+                .replace(
+                    pl.Series(id_lut["entity_id"]),
+                    pl.Series(id_lut["icd_code"]),
+                )
+                .str.split("&")
+                .explode()
             )
             .name.map(lambda n: n.replace("_uris", "_codes")),
             pl.col("icd_code").str.slice(0, 1).str.to_lowercase()
