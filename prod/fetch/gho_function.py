@@ -105,14 +105,11 @@ def lambda_handler(event: dict, context: Any) -> dict:
         "fetched_at":      payload["fetched_at"],
         "source_api":      payload["source_api"],
         "s3_uri":          s3_uri,
-        "total_indicators": data["total_indicators"],
-        "total_fetched":   data["total_fetched"],
-        "indicators":      {c: v["total_after_filter"] for c, v in data["indicators"].items()},
+        "params":          payload["fetch_params"],
+        "total_fetched":   len(data["indicator_catalogue"]) + len(data["geo_catalogue"]) + len(data["records"])
     }
 
-    log.info(
-        "Done — %d indicator(s), %d total records saved to %s",
-        data["total_indicators"], data["total_fetched"], s3_uri,
+    log.info("Done — %d datapoints saved to %s",summary["total_fetched"], s3_uri,
     )
     return ok_response(summary)
 
