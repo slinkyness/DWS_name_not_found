@@ -35,7 +35,7 @@ OUT_BUCKET = os.environ["S3_BUCKET"]
 S3_FOLDER = os.environ["S3_PROCESSED_FOLDER"]
 
 HEALTH_DATA_URI = f"s3://{OUT_BUCKET}/{S3_FOLDER}/health_data.parquet"
-METADATA_URI    = f"s3://{OUT_BUCKET}/{S3_FOLDER}/ihme_dimension_map.parquet"
+METADATA_URI    = f"s3://{OUT_BUCKET}/{S3_FOLDER}/ihme_metadata.parquet"
 
 MEASURE_COLS    = {"val", "upper", "lower"}
 KEY_COLS = ["age", "cause", "etiology", "location", "measure", "metric", "population_group", "sex", "year"]
