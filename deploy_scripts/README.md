@@ -1,5 +1,8 @@
 How to deploy
 
+*Use build_fetch.ps1 and build_process.ps1 to get all lambda functions of the fetch and process stage.
+RDS and Orchestrator can be copied directly into AWS as they don't have an additional file to merge.*
+
 1. Upload the zip fetch_function in your bucket under in the folder /scripts/fetch
 2. Upload the zip process_function in your bucket under in the folder /scripts/process
 3. Update if necessary the shell script cli_process_deploy.bash if any of these don't match your setup
