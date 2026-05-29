@@ -3,7 +3,7 @@ lambda_utils.py — Shared helpers for all FETCH-phase Lambdas
 =============================================================
 Keeps the fetch Lambda layer lean: no polars, no upsert logic.
 For process-phase helpers (upsert_by_date, load_s3_parquet, etc.)
-see utils/process_lambda_utils.py.
+see lambda_layers/process_lambda_utils.py.
 
 Provides:
   get_secret(secret_name, region, key)            → str

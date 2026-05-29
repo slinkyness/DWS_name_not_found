@@ -23,7 +23,7 @@ from typing import Any
 
 import polars as pl
 
-from process_lambda_utils import load_s3_parquet, upsert_by_date, ok_response, error_response
+from process_lambda_utils import load_s3_parquet, upsert_by_date, ok_response, error_response, get_s3_info
 from ihme_process import transform, HEALTH_DATA_URI, UPSERT_KEY, DATE_COL
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
@@ -34,9 +34,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
     now = datetime.now(timezone.utc)
 
     # -- 1. Extract file from S3 event ----------------------------------------
-    record = event["Records"][0]["s3"]
-    bucket = record["bucket"]["name"]
-    key    = record["object"]["key"]
+    s3_info = get_s3_info(event)
+    bucket = s3_info["bucket"]
+    key = s3_info["key"]
     log.info("Triggered by s3://%s/%s", bucket, key)
 
     # -- 2. Read & transform ---------------------------------------------------

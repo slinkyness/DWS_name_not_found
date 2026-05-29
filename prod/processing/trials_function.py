@@ -41,6 +41,7 @@ from process_lambda_utils import (
     upsert_by_date,
     ok_response,
     error_response,
+    get_s3_info
 )
 from trials_process import TRIALS_DATA_URI, UPSERT_KEY, DATE_COL, transform
 
@@ -57,9 +58,9 @@ def lambda_handler(event: dict, context: Any) -> dict:
     now = datetime.now(timezone.utc)
 
     # -- 1. Extract S3 event metadata ------------------------------------------
-    record = event["Records"][0]["s3"]
-    bucket = record["bucket"]["name"]
-    key    = record["object"]["key"]
+    s3_info = get_s3_info(event)
+    bucket = s3_info["bucket"]
+    key = s3_info["key"]
     log.info("Triggered by s3://%s/%s", bucket, key)
 
     # -- 2. Detect source type -------------------------------------------------

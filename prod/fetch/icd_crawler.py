@@ -1,15 +1,16 @@
-
-
 """
-icd_catalogue_fetch.py — ICD-API client (WHO ICD-11 & ICD-10)
+icd_crawler.py — ICD-API client (WHO ICD-11 & ICD-10)
 =====================================================
-Supports two use-cases:
+Supports use-case:
   1. get_all_codes()  – full hierarchy crawl of ICD-11 MMS (for bulk classification)
-  2. fetch_multiple_entities() / batch – fetch many entities by URI list
+
+Local deployment uses dotenv for ICD_API_CLIENT_SECRET and ICD_API_CLIENT_ID
+Crawler runtime is 12 hours, as only necessary once a year, not optimized and due to EC2 setup issues not deployed on AWS.
 
 Correct API base URLs (v2):
   Entity  : GET https://id.who.int/icd/release/11/mms/<code>
   Root    : GET https://id.who.int/icd/release/11/mms
+
 """
 from __future__ import annotations
 

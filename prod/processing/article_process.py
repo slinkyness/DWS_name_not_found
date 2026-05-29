@@ -27,6 +27,9 @@ version        Int32                 incremented only on newer published_at
 
 from __future__ import annotations
 
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+analyzer = SentimentIntensityAnalyzer()
+
 import logging
 from datetime import datetime, timezone
 
@@ -42,7 +45,8 @@ SOURCE_COL = "source_apis"
 CANONICAL_COL = [
     UPSERT_KEY, "topic", "author", "title",
     "description", "image_url", DATE_COL, "language",
-    "category", SOURCE_COL, "first_seen_at", "last_seen_at", "version",
+    "category", SOURCE_COL, "first_seen_at", "last_seen_at",
+    "version", "media_sentiment_score",  # ← neu
 ]
 
 # ── Normalise one fetch-file DataFrame ────────────────────────────────────────
@@ -86,6 +90,13 @@ def normalise(raw: pl.DataFrame, now_str: str) -> pl.DataFrame:
             pl.col(DATE_COL).str.to_datetime(date_fmt, strict=False).dt.replace_time_zone("UTC"),
             pl.col("author").replace("#author.fullName}", None),
             pl.col(UPSERT_KEY).str.replace(r"\?.*", "").str.strip_suffix("/"),
+        )
+        # ← NEU: Sentiment berechnen
+        .with_columns(
+            pl.col("title").map_elements(
+                lambda t: analyzer.polarity_scores(t)["compound"] if t else None,
+                return_dtype=pl.Float64
+            ).alias("media_sentiment_score")
         )
         .select(CANONICAL_COL)
     )
@@ -170,6 +181,12 @@ def normalise_who(raw: pl.DataFrame) -> pl.DataFrame:
                     *SHARED_LITERALS,
                     pl.lit(topic).alias("topic"),
                     description_expr,
+                )
+                .with_columns(
+                    pl.col("title").map_elements(
+                        lambda t: analyzer.polarity_scores(t)["compound"] if t else None,
+                        return_dtype=pl.Float64
+                    ).alias("media_sentiment_score")
                 )
                 .select(CANONICAL_COL)
                 for list_col, topic, pre_exprs, description_expr in sections

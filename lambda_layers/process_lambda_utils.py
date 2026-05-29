@@ -83,6 +83,22 @@ def _s3_object_exists(bucket: str, key: str) -> bool:
             return False
         raise
 
+def get_s3_info(event):
+    # EventBridge format
+    if "detail" in event:
+        return {
+            "bucket": event["detail"]["bucket"]["name"],
+            "key": event["detail"]["object"]["key"]
+        }
+    # S3 direct trigger format
+    if "Records" in event:
+        record = event["Records"][0]["s3"]
+        return {
+            "bucket": record["bucket"]["name"],
+            "key": record["object"]["key"]
+        }
+    raise ValueError(f"Unrecognised event format: {event}")
+
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
     """Split ``s3://bucket/key`` into ``(bucket, key)``."""
     without_scheme = uri[len("s3://"):]
