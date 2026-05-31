@@ -1,13 +1,21 @@
-import boto3, io, pg8000, json
+import os
+import boto3
+import io
+import json
+import pg8000
 import polars as pl
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from datetime import datetime, timezone
 
-DB_HOST = "REDACTED_DB_HOST"
-DB_NAME = "REDACTED_DB_NAME"
-DB_USER = "REDACTED_DB_USER"
-DB_PASS = "REDACTED_DB_PASS"
-S3_BUCKET = "REDACTED_S3_BUCKET"
+from lambda_utils import get_secret
+
+SECRET_NAME = os.environ["SECRET_NAME"]
+REGION      = os.environ["AWS_REGION_NAME"]
+S3_BUCKET   = os.environ["S3_BUCKET"]
+DB_HOST = get_secret(SECRET_NAME, REGION, "host")
+DB_NAME = get_secret(SECRET_NAME, REGION, "dbInstanceIdentifier")
+DB_USER = get_secret(SECRET_NAME, REGION, "username")
+DB_PASS = get_secret(SECRET_NAME, REGION, "password")
 
 
 def get_conn():
