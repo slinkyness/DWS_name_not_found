@@ -589,16 +589,18 @@ print(f"  ✅ staged {trial_count} rows → staging_trials_glue")
 # SQL upsert into dim_trials
 execute_sql_steps([
     """
-    INSERT INTO dim_trials (
-        trial_id,
-        region_key,
-        disease_key,
-        stage,
-        status,
-        active,
-        loaded_at
-    )
-    SELECT
+    TRUNCATE TABLE dim_trials
+    """,
+
+    """
+    INSERT INTO dim_trials (trial_id,
+                            region_key,
+                            disease_key,
+                            stage,
+                            status,
+                            active,
+                            loaded_at)
+    SELECT DISTINCT ON (s.trial_id, r.region_key)
         s.trial_id,
         r.region_key,
         d.disease_key,
@@ -612,12 +614,7 @@ execute_sql_steps([
     LEFT JOIN dim_disease d
       ON d.icd11_code = s.icd11_code
     WHERE s.country IS NOT NULL
-    ON CONFLICT (trial_id, region_key) DO UPDATE SET
-        disease_key = COALESCE(EXCLUDED.disease_key, dim_trials.disease_key),
-        stage       = EXCLUDED.stage,
-        status      = EXCLUDED.status,
-        active      = EXCLUDED.active,
-        loaded_at   = EXCLUDED.loaded_at
+    ORDER BY s.trial_id, r.region_key, d.disease_key ASC NULLS LAST
     """,
 ], label="dim_trials upsert")
 
